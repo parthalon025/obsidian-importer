@@ -3,9 +3,10 @@
  * Handles API calls with rate limiting and error handling
  */
 
-import { 
-	Client, 
-	BlockObjectResponse, 
+import { App, TFile } from 'obsidian';
+import {
+	Client,
+	BlockObjectResponse,
 	PageObjectResponse,
 	DatabaseObjectResponse,
 	RichTextItemResponse,
@@ -390,26 +391,57 @@ export async function extractFrontMatter(
 }
 
 /**
- * Extract notion timestamps from file frontmatter
- * Used for delta sync to determine if file needs updating
- * @param fileContent - The raw file content including frontmatter
+ * Extract notion timestamps from file frontmatter using Obsidian's metadata cache.
+ * Uses a hybrid approach: tries metadataCache first (fast, recommended by Obsidian),
+ * falls back to regex parsing if cache is unavailable.
+ *
+ * Best practice per Obsidian docs: getFileCache() returns cached metadata synchronously
+ * for existing files. For newly created files, cache may not be ready immediately.
+ *
+ * @param app - Obsidian App instance for metadataCache access
+ * @param file - TFile to extract timestamps from
+ * @param fileContent - Optional file content for regex fallback (avoids re-reading file)
  * @returns Object with created and updated timestamps, or null if not found
+ *
+ * @see https://docs.obsidian.md/Reference/TypeScript+API/MetadataCache/getFileCache
  */
-export function extractNotionTimestamps(fileContent: string): {
-	created?: string;
-	updated?: string;
-} | null {
-	const createdMatch = fileContent.match(/^notion-created:\s*(.+)$/m);
-	const updatedMatch = fileContent.match(/^notion-updated:\s*(.+)$/m);
+export function extractNotionTimestamps(
+	app: App,
+	file: TFile,
+	fileContent?: string
+): { created?: string; updated?: string } | null {
+	// Try metadataCache first (preferred approach per Obsidian best practices)
+	// Cache should be populated for existing files that have been indexed
+	const cache = app.metadataCache.getFileCache(file);
 
-	if (!createdMatch || !updatedMatch) {
-		return null; // Old import without timestamps
+	if (cache?.frontmatter) {
+		const created = cache.frontmatter['notion-created'];
+		const updated = cache.frontmatter['notion-updated'];
+
+		// Only return if both timestamps are present (complete delta sync metadata)
+		if (created && updated) {
+			return { created, updated };
+		}
 	}
 
-	return {
-		created: createdMatch[1].trim(),
-		updated: updatedMatch[1].trim()
-	};
+	// Fallback to regex parsing if:
+	// - Cache is not yet populated (timing issue)
+	// - Frontmatter exists but timestamps are missing/incomplete
+	// - File was just created and cache hasn't updated
+	if (fileContent) {
+		const createdMatch = fileContent.match(/^notion-created:\s*(.+)$/m);
+		const updatedMatch = fileContent.match(/^notion-updated:\s*(.+)$/m);
+
+		if (createdMatch && updatedMatch) {
+			return {
+				created: createdMatch[1].trim(),
+				updated: updatedMatch[1].trim()
+			};
+		}
+	}
+
+	// No timestamps found - this is a legacy import or non-incremental import
+	return null;
 }
 
 /**

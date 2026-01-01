@@ -1981,14 +1981,19 @@ export class NotionAPIImporter extends FormatImporter {
 	}
 
 	/**
-	 * Check if a file should be skipped, updated, or created during import
-	 * Supports delta sync by comparing timestamps when incremental import is enabled
+	 * Check if a file should be skipped, updated, or created during import.
+	 * Supports delta sync by comparing timestamps when incremental import is enabled.
+	 *
+	 * Uses Obsidian's metadataCache for efficient frontmatter access (recommended by Obsidian docs),
+	 * with regex fallback for edge cases where cache isn't ready.
 	 *
 	 * @param filePath - Path to the file to check
 	 * @param notionId - Notion ID of the page being imported
 	 * @param pageLastEdited - Last edited timestamp from Notion API
 	 * @param ctx - Import context for reporting
 	 * @returns 'skip', 'update', or 'create'
+	 *
+	 * @see https://docs.obsidian.md/Reference/TypeScript+API/MetadataCache/getFileCache
 	 */
 	private async shouldSkipOrUpdateFile(
 		filePath: string,
@@ -2002,22 +2007,37 @@ export class NotionAPIImporter extends FormatImporter {
 			return 'create'; // File doesn't exist
 		}
 
-		// Read file and extract notion-id from frontmatter
 		try {
+			// Try metadataCache first for notion-id (preferred per Obsidian best practices)
+			// Cache should be populated for existing files that have been indexed
+			const cache = this.app.metadataCache.getFileCache(file);
+			let existingNotionId: string | undefined;
+
+			if (cache?.frontmatter) {
+				existingNotionId = cache.frontmatter['notion-id'];
+			}
+
+			// Read file content - needed for:
+			// 1. Regex fallback if cache unavailable
+			// 2. collectUnresolvedPlaceholders() scanning
 			const content = await this.vault.read(file);
-			const notionIdMatch = content.match(/^notion-id:\s*(.+)$/m);
 
-			if (!notionIdMatch) {
-				return 'create'; // Different file, will use unique path
+			// Fallback to regex if cache didn't have notion-id
+			if (!existingNotionId) {
+				const notionIdMatch = content.match(/^notion-id:\s*(.+)$/m);
+				existingNotionId = notionIdMatch?.[1]?.trim();
 			}
 
-			const existingNotionId = notionIdMatch[1].trim();
+			if (!existingNotionId) {
+				return 'create'; // No notion-id found, treat as different file
+			}
+
 			if (existingNotionId !== notionId) {
-				return 'create'; // Different notion-id, will rename
+				return 'create'; // Different notion-id, will create with unique name
 			}
 
-			// Same notion-id found - check if update needed
-			const timestamps = extractNotionTimestamps(content);
+			// Same notion-id found - check if update needed using hybrid timestamp extraction
+			const timestamps = extractNotionTimestamps(this.app, file, content);
 
 			// Combine skip conditions: no timestamps (legacy file) OR local is same/newer
 			if (!timestamps || pageLastEdited <= timestamps.updated!) {
