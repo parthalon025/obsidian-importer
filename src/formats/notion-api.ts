@@ -2226,7 +2226,7 @@ export class NotionAPIImporter extends FormatImporter {
 		notionId: string,
 		pageLastEdited: string,
 		ctx: ImportContext
-	): Promise<{ path: string | null; shouldUpdate: boolean }> {
+	): Promise<{ path: string | null, shouldUpdate: boolean }> {
 		const basePath = parentPath ? `${parentPath}/${fileName}` : fileName;
 
 		// Check if file should be skipped, updated, or created

@@ -409,7 +409,7 @@ export function extractNotionTimestamps(
 	app: App,
 	file: TFile,
 	fileContent?: string
-): { created?: string; updated?: string } | null {
+): { created?: string, updated?: string } | null {
 	// Try metadataCache first (preferred approach per Obsidian best practices)
 	// Cache should be populated for existing files that have been indexed
 	const cache = app.metadataCache.getFileCache(file);
