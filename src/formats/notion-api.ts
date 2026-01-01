@@ -43,6 +43,30 @@ interface NotionTreeNode {
 	collapsed: boolean; // Whether the node's children are collapsed
 }
 
+/**
+ * Notion API Importer for Obsidian
+ *
+ * Imports pages and databases from Notion using the official Notion API.
+ * Converts Notion content to Markdown with full support for:
+ *
+ * **Core Features:**
+ * - Pages and databases with nested hierarchies
+ * - Rich text formatting, code blocks, and embeds
+ * - Database properties (formulas, relations, rollups)
+ * - Attachments (images, files, covers)
+ * - Cross-page links and mentions
+ * - Synced blocks
+ *
+ * **Delta Sync (Incremental Import):**
+ * When enabled, tracks `notion-id` and timestamps in frontmatter to:
+ * - Skip pages that haven't changed since last import
+ * - Update only pages modified in Notion (preserves local structure)
+ * - Efficiently sync large workspaces with minimal API calls
+ *
+ * Uses Obsidian's metadataCache for fast frontmatter access per best practices.
+ *
+ * @see https://developers.notion.com/reference
+ */
 export class NotionAPIImporter extends FormatImporter {
 	notionToken: string = '';
 	formulaStrategy: FormulaImportStrategy = 'hybrid'; // Default strategy
@@ -50,7 +74,16 @@ export class NotionAPIImporter extends FormatImporter {
 	singleLineBreaks: boolean = false; // Single line breaks between blocks (default: disabled)
 	coverPropertyName: string = 'cover'; // Custom property name for page cover
 	databasePropertyName: string = 'base'; // Property name for linking pages to their database
-	incrementalImport: boolean = false; // Incremental import: skip files with same notion-id (default: disabled)
+
+	/**
+	 * Enable delta sync for incremental imports.
+	 * When true:
+	 * - Adds notion-id, notion-created, notion-updated to frontmatter
+	 * - Skips pages that haven't changed since last import
+	 * - Updates only pages where Notion version is newer
+	 * - Uses metadataCache for efficient timestamp comparison
+	 */
+	incrementalImport: boolean = false;
 	private notionClient: Client | null = null;
 	private processedPages: Set<string> = new Set();
 	private requestCount: number = 0;
