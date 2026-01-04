@@ -221,7 +221,7 @@ export class NotionAPIImporter extends FormatImporter {
 		// Incremental import setting
 		new Setting(this.modal.contentEl)
 			.setName('Incremental import')
-			.setDesc('Enables delta sync: tracks notion-id and timestamps in frontmatter to skip unchanged pages and update only pages modified in Notion since last import. Keeps your vault synchronized with Notion changes.')
+			.setDesc('Adds notion-id and timestamps in frontmatter to skip pages with no changes in Notion since the last import. Local changes will be overwritten if the copy in Notion was modified.')
 			.addToggle(toggle => toggle
 				.setValue(false) // Default to disabled
 				.onChange(value => {
@@ -1476,7 +1476,6 @@ export class NotionAPIImporter extends FormatImporter {
 							await this.vault.modify(existingFile, fullContent);
 							console.log(`[UPDATE FILE] Successfully updated: ${finalPath}`);
 							this.pagesUpdatedCount++;
-							ctx.reportNoteUpdate(sanitizedTitle);
 						}
 						else {
 							throw new Error(`File not found or not a file: ${finalPath}`);
@@ -2078,8 +2077,15 @@ export class NotionAPIImporter extends FormatImporter {
 				const reason = !timestamps ? 'already exists (no timestamp)' : 'up to date';
 				ctx.reportSkipped(basename, reason);
 
+				// IMPORTANT: Register this skipped file in notionIdToPath mapping
+				// This is critical for placeholder resolution - without it, cross-page links
+				// to skipped pages would remain unresolved
 				const filePathWithoutExtension = filePath.replace(/\.md$/, '');
 				this.notionIdToPath.set(notionId, filePathWithoutExtension);
+
+				// IMPORTANT: Scan for unresolved placeholders from previous imports
+				// Required to resolve cross-page links in incremental imports where
+				// the target page was imported before the source page
 				await this.collectUnresolvedPlaceholders(content, notionId, filePath);
 
 				return 'skip';
